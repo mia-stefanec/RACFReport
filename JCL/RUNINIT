@@ -1,0 +1,14 @@
+//RUNINIT   EXEC PGM=IKJEFT01,                                           
+// REGION=0M,                                                           
+// DYNAMNBR=20                                                          
+//STEPLIB   DD  DSN=APPL.SMFRPT.LOAD,                                   
+// DISP=SHR                                                             
+//          DD  DSN=DSNC10.SDSNLOAD,                                    
+// DISP=SHR                                                             
+//SYSTSPRT DD SYSOUT=*                                                  
+//SYSPRINT DD SYSOUT=*                                                  
+//SYSTSIN  DD *                                                         
+  PROFILE NOPREFIX                                                     
+  DSN SYSTEM(DBCG)                                                      
+  RUN PROGRAM(INITSQL)    LIB(APPL.SMFRPT.LOAD) PLAN(SMFRPT)            
+/*                                                                      

@@ -1,0 +1,3 @@
+//SQLCMP  EXEC PROC=PLICMP#2,                                           00010005
+// MEM=ACCSSQL,                                                         00020007
+// APL=SMFRPT                                                           00030000

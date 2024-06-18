@@ -1,0 +1,3 @@
+//INITSQL  EXEC PROC=PLICMP#2,                                          00010000
+// MEM=INITSQL,                                                         00020000
+// APL=SMFRPT                                                           00030000

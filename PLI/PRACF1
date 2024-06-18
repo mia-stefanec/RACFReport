@@ -1,0 +1,231 @@
+ PRACF1: PROC(DCPTR) OPTIONS(MAIN);
+   /*******************************************************************/
+   /*       DEKLARACIJA POTREBNIH VARIJABLI I STRUKTURA PROGRAMA      */
+   /*******************************************************************/
+   DCL
+   1 ULAZ,
+     2 LEN        BIN FIXED(31,0),
+     2 *          CHAR(2),
+     2 TRN_CODE   CHAR(9),
+     2 DATAU,
+       3 KORISNIK CHAR(8),
+       3 DATOD    CHAR(8),
+       3 DATDO    CHAR(8);
+
+   DCL
+   1 IZLAZ,
+     2 LEN               BINARY FIXED(31) INITIAL((SIZE(IZLAZ) - 2)),
+     2 *                 BIT(8),
+     2 ATTR              CHAR(1),
+     2 DATAI,
+       3 UVJKORISNIK     CHAR(8),
+       3 UVJDATOD        CHAR(10),
+       3 UVJDATDO        CHAR(10),
+       3 REZ_TABLICA(13),
+         4 DATUM         CHAR(10),
+         4 VRIJEME       CHAR(8),
+         4 DOGADJAJ      CHAR(8),
+         4 KORISNIK      CHAR(8),
+         4 TERMINAL      CHAR(8),
+         4 IME_KOR       CHAR(20),
+       3 PORUKA          CHAR(79);   /*NASTAVAK, KRAJ, GRESKA*/
+
+
+   DCL DCPTR POINTER;
+
+   DCL
+   1 DCMASK BASED(DCPTR),
+     2 CLTIME CHAR(8),
+     2 *  CHAR(2),
+     2 CSTATUS CHAR(2),
+     2 CDATE DECIMAL FIXED(7),
+     2 CTIME DECIMAL FIXED(7),
+     2 CMRBR BIN FIXED(31),
+     2 CMOD  CHAR(8),
+     2 CUSER CHAR(8);
+
+   DCL PLITDLI ENTRY;
+   DCL RZ0AER ENTRY;
+   DCL OPCIJA CHAR(4) VALUE('1');
+
+   ON ERROR SNAP;
+
+   DCL PAR_NUM BINARY FIXED(31) INITIAL(0),
+   DESIGN_NAME CHARACTER(8) VALUE('EB7Z50O2');
+
+   DCL FIRSTREC BIT(1); /*FLAG FOR FIRST RECORD*/
+   DCL COUNTREC BIN FIXED(15) INIT(0); /*COUNTER FOR SCREEN*/
+   DCL DATEFLAG BIN FIXED(15) INIT(0);
+   DCL 1 SQL_FILTERS,
+     2 NULLIND1 BIN FIXED(15) INIT(0),
+     2 TPDATOD  CHAR(10)      INIT(''),
+     2 NULLIND2 BIN FIXED(15) INIT(0),
+     2 TPDATDO  CHAR(10)      INIT(''),
+     2 NULLIND3 BIN FIXED(15) INIT(0);
+
+   EXEC SQL INCLUDE SQLCA;
+   EXEC SQL INCLUDE VJOBINIT;
+   /******************************************************************/
+   /*                KREIRANJE KURSORA ZA PRISTUP DB                 */
+   /******************************************************************/
+   EXEC SQL
+     DECLARE SEARCHDATA CURSOR FOR
+     SELECT EVENT_QUAL,
+     EVT_USER_ID,
+     TIME_WRITTEN,
+     DATE_WRITTEN,
+     USER_NAME,
+     TERM
+     FROM VJOBINIT
+    WHERE EVT_USER_ID LIKE CONCAT(NVL(:DATAU.KORISNIK:NULLIND1,'%'),'%')
+     AND (DATE_WRITTEN BETWEEN NVL(:TPDATOD:NULLIND2,'0001-01-01')
+     AND NVL(:TPDATDO:NULLIND3,CURRENT DATE))
+     AND (EVENT_QUAL NOT IN ('SUCCESS','TERM','SUCCESSI','SUCCESST',
+     'RACINITI','RACINITD','SUCCESSP','SUCCESSM','MFAPSUCC'))
+     ORDER BY TIMESTAMP_WRITTEN DESC;
+   /******************************************************************/
+   /*                       GLAVNI DIO PROGRAMA                      */
+   /******************************************************************/
+
+   ULAZ = '';
+   FIRSTREC = '1'B;
+   COUNTREC = 0;
+
+   PAR_NUM = 3;
+   CALL PLITDLI(PAR_NUM, 'GU  ', DCPTR, ULAZ);
+
+   DO WHILE(CSTATUS <> 'QC');
+     IF CSTATUS <> '  ' THEN
+       CALL RZ0AER(DCMASK, 'CISRT-1', ULAZ, OPCIJA);
+     /**************************************************************/
+     /*                PROVJERA UNESENIH UVJETA I                  */
+     /*                 POZIV FUNKCIJE FETCHDATA                   */
+     /**************************************************************/
+			
+     IF(DATAU.KORISNIK <> '' & (DATAU.DATOD <> '' & DATAU.DATDO <> ''))
+     THEN CALL FETCHDATA;	 
+	 ELSE IF(DATAU.KORISNIK <> '') THEN CALL FETCHDATA; 
+	 
+	 ELSE IF(DATAU.DATOD <> '' & DATAU.DATDO <> '') THEN CALL FETCHDATA;
+	 
+	 ELSE 
+	  DO;
+	    IZLAZ.PORUKA = RIGHT('UNESITE KORISNIKA I/ILI OBA DATUMA!',
+                              LENGTH(IZLAZ.PORUKA));
+        CALL P_SEND;
+	  END;
+		
+     FIRSTREC = '1'B;
+     COUNTREC = 0;
+
+     PAR_NUM = 3;
+     CALL PLITDLI(PAR_NUM, 'GU  ', DCPTR, ULAZ);
+   END;
+
+   FETCHDATA: PROC;
+
+     IF (DATAU.KORISNIK = '') THEN
+       NULLIND1 = -1;
+
+     PUT SKIP DATA(DATAU);
+
+     IF (DATAU.DATOD = '') THEN
+       NULLIND2 = -1;
+     ELSE
+       TPDATOD = REPATTERN(DATAU.DATOD,'YYYY-MM-DD','DDMMYYYY');
+
+     IF (DATAU.DATDO = '') THEN
+       NULLIND3 = -1;
+     ELSE
+       TPDATDO = REPATTERN(DATAU.DATDO,'YYYY-MM-DD','DDMMYYYY');
+
+     PUT SKIP DATA(SQL_FILTERS);
+
+     EXEC SQL
+       OPEN SEARCHDATA;
+
+     PUT SKIP EDIT('OPENSQLCA')(A);
+     PUT SKIP DATA(SQLCA);
+
+     DO WHILE(SQLCODE = 0);
+       REINIT VJOBINIT;
+       EXEC SQL
+         FETCH SEARCHDATA INTO
+         :VJOBINIT.EVENT_QUAL,
+         :VJOBINIT.EVT_USER_ID,
+         :VJOBINIT.TIME_WRITTEN,
+         :VJOBINIT.DATE_WRITTEN,
+         :VJOBINIT.USER_NAME,
+         :VJOBINIT.TERM;
+       IF SQLCODE <> 0 THEN LEAVE;
+       CALL PREPARE_SCREEN;
+     END;
+
+     IF SQLCODE < 0 THEN
+       DO;
+         CALL RZ0AER(SQLCA, 'S ERRFETCH',VJOBINIT,OPCIJA);
+       END;
+
+     IF SQLCODE = 100 THEN
+       DO;
+     PUT SKIP EDIT('ENDSQLCA')(A);
+     PUT SKIP DATA(SQLCA);
+         IF (FIRSTREC & COUNTREC = 0) THEN
+           IZLAZ.PORUKA = RIGHT('NEMA PODATAKA ZA TRAZENE UVJETE',
+           LENGTH(IZLAZ.PORUKA));
+         ELSE
+           DO;
+             IZLAZ.PORUKA = RIGHT('NEMA VISE PODATAKA',
+             LENGTH(IZLAZ.PORUKA));
+           END;
+         CALL P_SEND;
+       END;
+
+     EXEC SQL
+       CLOSE SEARCHDATA;
+   END FETCHDATA;
+
+   PREPARE_SCREEN: PROC;
+     IF COUNTREC = 13 THEN
+       DO;
+         IZLAZ.PORUKA = RIGHT('NASTAVAK',LENGTH(IZLAZ.PORUKA));
+         CALL P_SEND;
+         COUNTREC = 0;
+       END;
+
+     COUNTREC += 1;
+     IZLAZ.UVJKORISNIK = DATAU.KORISNIK;
+     IZLAZ.UVJDATOD = DATAU.DATOD;
+     IZLAZ.UVJDATDO = DATAU.DATDO;
+
+     IF (VJOBINIT.DATE_WRITTEN <> '') THEN
+       IZLAZ.REZ_TABLICA(COUNTREC).DATUM =
+       REPATTERN(VJOBINIT.DATE_WRITTEN, 'DDMMYYYY', 'YYYY-MM-DD');
+
+     IZLAZ.REZ_TABLICA(COUNTREC).VRIJEME = VJOBINIT.TIME_WRITTEN;
+     IZLAZ.REZ_TABLICA(COUNTREC).DOGADJAJ = VJOBINIT.EVENT_QUAL;
+     IZLAZ.REZ_TABLICA(COUNTREC).KORISNIK = VJOBINIT.EVT_USER_ID;
+     IZLAZ.REZ_TABLICA(COUNTREC).TERMINAL = VJOBINIT.TERM;
+     IZLAZ.REZ_TABLICA(COUNTREC).IME_KOR = VJOBINIT.USER_NAME;
+   END PREPARE_SCREEN;
+
+   P_SEND: PROC;
+
+     IF FIRSTREC THEN
+       DO;
+         PAR_NUM = 4;
+         FIRSTREC = '0'B;
+       END;
+     ELSE
+       DO;
+         PAR_NUM = 3;
+       END;
+
+     CALL PLITDLI(PAR_NUM,'ISRT', DCMASK, IZLAZ, DESIGN_NAME);
+
+     IF (CSTATUS <> '  ') THEN
+       CALL RZ0AER(DCMASK, 'C-ISRT', IZLAZ, OPCIJA);
+
+     REINIT IZLAZ;
+   END P_SEND;
+ END PRACF1;
